@@ -21,4 +21,4 @@ jobs:
     - name: Get dependencies
       run: go mod download
     - name: Test
-      run: make test
+      run: go test ./...
