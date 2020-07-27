@@ -83,41 +83,40 @@ func TestSubscriptionHandlerManager(t *testing.T) {
 	_, err = sm.Create(context.Background(), topic.ID(), subID2, subConfig)
 	assert.Nil(t, err)
 
-	t.Run("Add", func(t *testing.T) {
-		counter := 0
-		wg := sync.WaitGroup{}
-		wg.Add(2)
-		ctx := context.Background()
-		subHandler := func(ctx context.Context, msg *pubsub.Message) error {
-			logger.Info("message_received", zap.String("message_id", msg.ID))
-			counter++
-			msg.Ack()
-			logger.Info("message_acked", zap.String("message_id", msg.ID))
-			wg.Done()
-			return nil
-		}
-		shm := NewSubscriptionHandlerManager(client)
-		err := shm.Add(ctx, subID1, subHandler, 1)
+	// Create subscription handler manager
+	counter := 0
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	ctx := context.Background()
+	subHandler := func(ctx context.Context, msg *pubsub.Message) error {
+		logger.Info("message_received", zap.String("message_id", msg.ID))
+		counter++
+		msg.Ack()
+		logger.Info("message_acked", zap.String("message_id", msg.ID))
+		wg.Done()
+		return nil
+	}
+	shm := NewSubscriptionHandlerManager(client)
+	err = shm.Add(ctx, subID1, subHandler, 1)
+	assert.Nil(t, err)
+	err = shm.Add(ctx, subID2, subHandler, 1)
+	assert.Nil(t, err)
+	defer shm.Stop(ctx)
+
+	// Publish message
+	attributes := map[string]string{"attr1": "attr1", "attr2": "attr2"}
+	_, err = tm.Publish(ctx, topicID, []byte(`{"payload": true}`), attributes)
+	assert.Nil(t, err)
+
+	// SubscriptionHandlerManager run
+	go func() {
+		err := shm.Run(ctx)
 		assert.Nil(t, err)
-		err = shm.Add(ctx, subID2, subHandler, 1)
-		assert.Nil(t, err)
-		defer shm.Stop(ctx)
+	}()
 
-		// Publish message
-		attributes := map[string]string{"attr1": "attr1", "attr2": "attr2"}
-		_, err = tm.Publish(ctx, topicID, []byte(`{"payload": true}`), attributes)
-		assert.Nil(t, err)
+	// Wait for handler execution
+	wg.Wait()
 
-		// SubscriptionHandlerManager run
-		go func() {
-			err := shm.Run(ctx)
-			assert.Nil(t, err)
-		}()
-
-		// Wait for handler execution
-		wg.Wait()
-
-		// The counter must be incremented twice
-		assert.Equal(t, 2, counter)
-	})
+	// The counter must be incremented twice
+	assert.Equal(t, 2, counter)
 }
