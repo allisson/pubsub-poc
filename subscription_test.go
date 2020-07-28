@@ -5,118 +5,62 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
-func TestSubscriptionManager(t *testing.T) {
+func TestSubscription(t *testing.T) {
 	// Use pubsub emulator
 	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
 
-	// Pubsub client
-	projectID := "my-project-id"
-	topicID := "my-topic-id-3"
-	client, err := pubsub.NewClient(context.Background(), projectID)
-	assert.Nil(t, err)
-
-	// Create topic
-	tm := NewTopicManager(client)
-	topic, err := tm.Create(context.Background(), topicID)
-	assert.Nil(t, err)
-
-	t.Run("Create", func(t *testing.T) {
-		ctx := context.Background()
-		subID := "sub-id-1"
-		subConfig := pubsub.SubscriptionConfig{}
-		sm := NewSubscriptionManager(client)
-
-		// Create a new subscription
-		sub, err := sm.Create(ctx, topic.ID(), subID, subConfig)
-		assert.Nil(t, err)
-		assert.Equal(t, subID, sub.ID())
-
-		// Create with subscription exists
-		sub, err = sm.Create(ctx, topic.ID(), subID, subConfig)
-		assert.Nil(t, err)
-		assert.Equal(t, subID, sub.ID())
-	})
-
-	t.Run("Create with timeout", func(t *testing.T) {
-		expectedError := "rpc error: code = DeadlineExceeded desc = context deadline exceeded"
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Microsecond)
-		defer cancel()
-		subID := "sub-id-1"
-		subConfig := pubsub.SubscriptionConfig{}
-		sm := NewSubscriptionManager(client)
-
-		// Create a new subscription
-		_, err := sm.Create(ctx, topic.ID(), subID, subConfig)
-		assert.Equal(t, expectedError, err.Error())
-	})
-}
-
-func TestSubscriptionHandlerManager(t *testing.T) {
-	// Use pubsub emulator
-	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
-
-	// Pubsub client
-	projectID := "my-project-id"
-	topicID := "my-topic-id-4"
-	subID1 := "my-sub-1"
-	subID2 := "my-sub-2"
-	client, err := pubsub.NewClient(context.Background(), projectID)
-	assert.Nil(t, err)
-
-	// Create topic
-	tm := NewTopicManager(client)
-	topic, err := tm.Create(context.Background(), topicID)
-	assert.Nil(t, err)
-
-	// Create subscriptions
-	subConfig := pubsub.SubscriptionConfig{}
-	sm := NewSubscriptionManager(client)
-	_, err = sm.Create(context.Background(), topic.ID(), subID1, subConfig)
-	assert.Nil(t, err)
-	_, err = sm.Create(context.Background(), topic.ID(), subID2, subConfig)
-	assert.Nil(t, err)
-
-	// Create subscription handler manager
-	counter := 0
-	wg := sync.WaitGroup{}
-	wg.Add(2)
+	// Context
 	ctx := context.Background()
-	subHandler := func(ctx context.Context, msg *pubsub.Message) error {
-		logger.Info("message_received", zap.String("message_id", msg.ID))
+	subID := "my-sub-id-1"
+	topicID := "my-topic-id-1"
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	// Pubsub client
+	projectID := "my-project-id"
+	client, err := pubsub.NewClient(context.Background(), projectID)
+	assert.Nil(t, err)
+
+	// Consume handler
+	counter := 0
+	consumerHandler := func(ctx context.Context, msg *pubsub.Message) error {
 		counter++
-		msg.Ack()
-		logger.Info("message_acked", zap.String("message_id", msg.ID))
 		wg.Done()
 		return nil
 	}
-	shm := NewSubscriptionHandlerManager(client)
-	err = shm.Add(ctx, subID1, subHandler, 1)
+
+	// Create topic
+	topic := NewTopic(topicID, client)
+	_, err = topic.Create(ctx)
 	assert.Nil(t, err)
-	err = shm.Add(ctx, subID2, subHandler, 1)
+
+	// Create subscription
+	sub := NewSubscription(
+		subID,
+		topicID,
+		pubsub.SubscriptionConfig{},
+		client,
+	)
+	_, err = sub.Create(ctx)
 	assert.Nil(t, err)
-	defer shm.Stop(ctx)
 
 	// Publish message
 	attributes := map[string]string{"attr1": "attr1", "attr2": "attr2"}
-	_, err = tm.Publish(ctx, topicID, []byte(`{"payload": true}`), attributes)
+	_, err = topic.Publish(ctx, []byte(`{"payload": true}`), attributes)
 	assert.Nil(t, err)
 
-	// SubscriptionHandlerManager run
-	go func() {
-		err := shm.Run(ctx)
-		assert.Nil(t, err)
-	}()
+	// Run consume
+	// nolint:errcheck
+	go sub.Consume(ctx, consumerHandler, 1)
 
-	// Wait for handler execution
+	// Wait to consume message
 	wg.Wait()
 
-	// The counter must be incremented twice
-	assert.Equal(t, 2, counter)
+	// The counter must be incremented once
+	assert.Equal(t, 1, counter)
 }

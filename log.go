@@ -101,5 +101,6 @@ func NewLogger() (logger *zap.Logger, err error) {
 
 func init() {
 	logger, _ = NewLogger()
+	// nolint:errcheck
 	defer logger.Sync()
 }

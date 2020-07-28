@@ -2,14 +2,13 @@ package pubsubpoc
 
 import (
 	"context"
-	"sync"
 
 	"cloud.google.com/go/pubsub"
 	"go.uber.org/zap"
 )
 
-func getSubscription(ctx context.Context, client *pubsub.Client, subID string) (*pubsub.Subscription, error) {
-	// Get subscription
+func getSubscription(ctx context.Context, client *pubsub.Client, subID, topicID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error) {
+	// Check if subscription exists
 	sub := client.Subscription(subID)
 	ok, err := sub.Exists(ctx)
 	if err != nil {
@@ -18,124 +17,115 @@ func getSubscription(ctx context.Context, client *pubsub.Client, subID string) (
 	if !ok {
 		return sub, ErrSubscriptionNotFound
 	}
+
 	return sub, nil
 }
 
-// SubscriptionManager ...
-type SubscriptionManager interface {
-	Create(ctx context.Context, topicID, subID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error)
+// ConsumeFunc ...
+type ConsumeFunc func(ctx context.Context, msg *pubsub.Message) error
+
+// Subscription ...
+type Subscription interface {
+	Create(ctx context.Context) (*pubsub.Subscription, error)
+	Consume(ctx context.Context, fn ConsumeFunc, maxOutstandingMessages uint) error
 }
 
-type subscriptionManager struct {
-	client *pubsub.Client
+type subscription struct {
+	id        string
+	topicID   string
+	subConfig pubsub.SubscriptionConfig
+	client    *pubsub.Client
 }
 
-func (s *subscriptionManager) Create(ctx context.Context, topicID, subID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error) {
+func (s *subscription) Create(ctx context.Context) (*pubsub.Subscription, error) {
 	// Get topic
-	topic, err := getTopic(ctx, s.client, topicID)
+	topic, err := getTopic(ctx, s.client, s.topicID)
 	if err != nil {
 		return &pubsub.Subscription{}, err
 	}
 
-	// Check if subscription exists
-	sub, err := getSubscription(ctx, s.client, subID)
-	if err != ErrSubscriptionNotFound {
-		return sub, err
-	}
-
 	// Create subscription
-	subConfig.Topic = topic
-	sub, err = s.client.CreateSubscription(ctx, subID, subConfig)
+	s.subConfig.Topic = topic
+	AlreadyExistsErr := "rpc error: code = AlreadyExists desc = Subscription already exists"
+	sub, err := s.client.CreateSubscription(ctx, s.id, s.subConfig)
 	if err != nil {
-		logger.Error("subscription_create", zap.String("subscription_id", subID), zap.Error(err))
-	} else {
-		logger.Info("subscription_created", zap.String("subscription_id", subID))
+		if err.Error() != AlreadyExistsErr {
+			logger.Error("subscription_create", zap.String("subscription_id", s.id), zap.Error(err))
+			return sub, err
+		}
 	}
-	return sub, err
+
+	logger.Info("subscription_created", zap.String("subscription_id", s.id))
+	return sub, nil
 }
 
-// NewSubscriptionManager ...
-func NewSubscriptionManager(client *pubsub.Client) SubscriptionManager {
-	return &subscriptionManager{client: client}
-}
-
-// SubscriptionHandler ...
-type SubscriptionHandler func(ctx context.Context, msg *pubsub.Message) error
-
-// SubscriptionHandlerManager ...
-type SubscriptionHandlerManager interface {
-	Add(ctx context.Context, subID string, handler SubscriptionHandler, maxOutstandingMessages uint) error
-	Run(ctx context.Context) error
-	Stop(ctx context.Context) error
-}
-
-type handlerItem struct {
-	Subscription *pubsub.Subscription
-	Handler      SubscriptionHandler
-}
-
-type subscriptionHandlerManager struct {
-	client            *pubsub.Client
-	handlers          []*handlerItem
-	mux               sync.Mutex
-	idleHandlerClosed chan struct{}
-}
-
-func (s *subscriptionHandlerManager) Add(ctx context.Context, subID string, handler SubscriptionHandler, maxOutstandingMessages uint) error {
-	s.mux.Lock()
-	sub, err := getSubscription(ctx, s.client, subID)
+func (s *subscription) Consume(ctx context.Context, fn ConsumeFunc, maxOutstandingMessages uint) error {
+	// Get subscription
+	sub, err := getSubscription(ctx, s.client, s.id, s.topicID, s.subConfig)
 	if err != nil {
 		return err
 	}
-	sub.ReceiveSettings.MaxOutstandingMessages = int(maxOutstandingMessages)
-	s.handlers = append(s.handlers, &handlerItem{Subscription: sub, Handler: handler})
-	s.mux.Unlock()
-	return nil
-}
 
-func (s *subscriptionHandlerManager) Stop(ctx context.Context) error {
-	logger.Info("subscription_handler_manager_stop")
-	close(s.idleHandlerClosed)
-	return nil
-}
+	logger.Info(
+		"subscription_consume_started",
+		zap.String("subscription_id", s.id),
+		zap.String("topic_id", s.topicID),
+		zap.Uint("max_outstanding_messages", maxOutstandingMessages),
+	)
 
-func (s *subscriptionHandlerManager) Run(ctx context.Context) error {
-	logger.Info("subscription_handler_manager_run")
-	newCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	err = sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+		logger.Info(
+			"subscription_consume_handle_message_started",
+			zap.String("subscription_id", s.id),
+			zap.String("topic_id", s.topicID),
+			zap.Uint("max_outstanding_messages", maxOutstandingMessages),
+			zap.String("message_id", msg.ID),
+		)
 
-	// Execute handlers
-	for _, item := range s.handlers {
-		go func(i *handlerItem) {
-			subID := i.Subscription.ID()
-			logger.Info("subscription_receive_started", zap.String("subscription_id", subID))
+		if err := fn(ctx, msg); err != nil {
+			logger.Error(
+				"subscription_consume_handle_message_error",
+				zap.String("subscription_id", s.id),
+				zap.String("topic_id", s.topicID),
+				zap.Uint("max_outstanding_messages", maxOutstandingMessages),
+				zap.String("message_id", msg.ID),
+				zap.Reflect("message", msg),
+				zap.Error(err),
+			)
+			msg.Nack()
+			return
+		}
 
-			err := i.Subscription.Receive(newCtx, func(ctx context.Context, msg *pubsub.Message) {
-				logger.Info("subscription_receive_handle_started", zap.String("subscription_id", subID), zap.Reflect("message", msg))
-				if err := i.Handler(ctx, msg); err != nil {
-					logger.Error("subscription_receive_handle_error", zap.String("subscription_id", subID), zap.Reflect("message", msg), zap.Error(err))
-					msg.Nack()
-					return
-				}
-				msg.Ack()
-				logger.Info("subscription_receive_handle_completed", zap.String("subscription_id", subID), zap.Reflect("message", msg))
-			})
+		msg.Ack()
+		logger.Info(
+			"subscription_consume_handle_message_completed",
+			zap.String("subscription_id", s.id),
+			zap.String("topic_id", s.topicID),
+			zap.Uint("max_outstanding_messages", maxOutstandingMessages),
+			zap.String("message_id", msg.ID),
+		)
+	})
 
-			if err != context.Canceled {
-				logger.Error("subscription_receive_error", zap.String("subscription_id", i.Subscription.ID()), zap.Error(err))
-			}
-		}(item)
+	if err != context.Canceled {
+		logger.Error(
+			"subscription_consume_started",
+			zap.String("subscription_id", s.id),
+			zap.String("topic_id", s.topicID),
+			zap.Uint("max_outstanding_messages", maxOutstandingMessages),
+			zap.Error(err),
+		)
+		return err
 	}
 
-	<-s.idleHandlerClosed
-
 	return nil
 }
 
-// NewSubscriptionHandlerManager ...
-func NewSubscriptionHandlerManager(client *pubsub.Client) SubscriptionHandlerManager {
-	return &subscriptionHandlerManager{
-		client:            client,
-		idleHandlerClosed: make(chan struct{}),
+// NewSubscription ...
+func NewSubscription(id, topicID string, subConfig pubsub.SubscriptionConfig, client *pubsub.Client) Subscription {
+	return &subscription{
+		id:        id,
+		topicID:   topicID,
+		subConfig: subConfig,
+		client:    client,
 	}
 }
