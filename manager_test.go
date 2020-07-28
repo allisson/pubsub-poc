@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSubscription(t *testing.T) {
+func TestManager(t *testing.T) {
 	// Use pubsub emulator
 	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
 
 	// Context
 	ctx := context.Background()
-	subID := "my-sub-id-1"
-	topicID := "my-topic-id-1"
+	subID := "my-sub-id-2"
+	topicID := "my-topic-id-2"
 	counter := 0
 
 	// Pubsub client
@@ -51,9 +51,12 @@ func TestSubscription(t *testing.T) {
 	_, err = topic.Publish(ctx, []byte(`{"payload": true}`), attributes)
 	assert.Nil(t, err)
 
-	// Run consume
-	// nolint:errcheck
-	go sub.Consume(ctx, consumerHandler, 1)
+	// Create manager
+	m := NewManager(client)
+	m.AddConsumer(subID, topicID, pubsub.SubscriptionConfig{}, consumerHandler, 1)
+
+	// Run manager
+	go m.Run()
 
 	// Wait to consume message
 	time.Sleep(100 * time.Millisecond)
