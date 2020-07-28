@@ -47,11 +47,11 @@ func (m *manager) Run() {
 
 	// Start consumers
 	for _, c := range m.consumers {
-		go func(ctx context.Context, c *consumer) {
+		go func(ctx context.Context, c consumer) {
 			if err := c.subscription.Consume(ctx, c.consumeFunc, c.maxOutstandingMessages); err != nil {
 				logger.Error("", zap.Error(err))
 			}
-		}(ctx, &c)
+		}(ctx, c)
 	}
 
 	<-m.idleConsumerClosed
