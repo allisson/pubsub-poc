@@ -56,7 +56,6 @@ func TestManager(t *testing.T) {
 	m.AddConsumer(subID, topicID, pubsub.SubscriptionConfig{}, consumerHandler, 1)
 
 	// Run manager
-	// nolint:errcheck
 	go m.Run()
 
 	// Wait to consume message
