@@ -8,7 +8,6 @@ import (
 )
 
 func getTopic(ctx context.Context, client *pubsub.Client, topicID string) (*pubsub.Topic, error) {
-	// Get topic
 	topic := client.Topic(topicID)
 	ok, err := topic.Exists(ctx)
 	if err != nil {
@@ -17,39 +16,39 @@ func getTopic(ctx context.Context, client *pubsub.Client, topicID string) (*pubs
 	if !ok {
 		return topic, ErrTopicNotFound
 	}
+
 	return topic, nil
+
 }
 
-// TopicManager ...
-type TopicManager interface {
-	Create(ctx context.Context, topicID string) (*pubsub.Topic, error)
-	Publish(ctx context.Context, topicID string, payload []byte, attributes map[string]string) (string, error)
+// Topic ...
+type Topic interface {
+	Create(ctx context.Context) (*pubsub.Topic, error)
+	Publish(ctx context.Context, payload []byte, attributes map[string]string) (string, error)
 }
 
-type topicManager struct {
+type topic struct {
+	id     string
 	client *pubsub.Client
 }
 
-func (t *topicManager) Create(ctx context.Context, topicID string) (*pubsub.Topic, error) {
-	// Check if topic exists
-	topic, err := getTopic(ctx, t.client, topicID)
-	if err != ErrTopicNotFound {
-		return topic, err
+func (t *topic) Create(ctx context.Context) (*pubsub.Topic, error) {
+	AlreadyExistsErr := "rpc error: code = AlreadyExists desc = Topic already exists"
+	topic, err := t.client.CreateTopic(ctx, t.id)
+	if err != nil {
+		if err.Error() != AlreadyExistsErr {
+			logger.Error("topic_create", zap.String("topic_id", t.id), zap.Error(err))
+			return topic, err
+		}
 	}
 
-	// Create topic
-	topic, err = t.client.CreateTopic(ctx, topicID)
-	if err != nil {
-		logger.Error("topic_create", zap.String("topic_id", topicID), zap.Error(err))
-	} else {
-		logger.Info("topic_created", zap.String("topic_id", topicID))
-	}
-	return topic, err
+	logger.Info("topic_created", zap.String("topic_id", t.id))
+	return topic, nil
 }
 
-func (t *topicManager) Publish(ctx context.Context, topicID string, payload []byte, attributes map[string]string) (string, error) {
+func (t *topic) Publish(ctx context.Context, payload []byte, attributes map[string]string) (string, error) {
 	// Get topic
-	topic, err := getTopic(ctx, t.client, topicID)
+	topic, err := getTopic(ctx, t.client, t.id)
 	if err != nil {
 		return "", err
 	}
@@ -57,16 +56,16 @@ func (t *topicManager) Publish(ctx context.Context, topicID string, payload []by
 	// Publish message
 	message := &pubsub.Message{Data: payload, Attributes: attributes}
 	result := topic.Publish(ctx, message)
-	id, err := result.Get(ctx)
+	msgID, err := result.Get(ctx)
 	if err != nil {
-		logger.Error("topic_publish", zap.String("topic_id", topicID), zap.Error(err))
+		logger.Error("topic_publish", zap.String("topic_id", t.id), zap.Error(err))
 	} else {
-		logger.Info("topic_published", zap.String("topic_id", topicID), zap.String("message_id", id))
+		logger.Info("topic_published", zap.String("topic_id", t.id), zap.String("message_id", msgID))
 	}
-	return id, err
+	return msgID, err
 }
 
-// NewTopicManager ...
-func NewTopicManager(client *pubsub.Client) TopicManager {
-	return &topicManager{client: client}
+// NewTopic ...
+func NewTopic(id string, client *pubsub.Client) Topic {
+	return &topic{id: id, client: client}
 }
