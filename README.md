@@ -7,9 +7,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"cloud.google.com/go/pubsub"
 	pubsubpoc "github.com/allisson/pubsub-poc"
@@ -24,6 +24,7 @@ func main() {
 	ctx := context.Background()
 	projectID := "my-project"
 	topicID := "my-topic"
+	subID := "my-subscription"
 
 	// Create topic
 	topic, err := pubsubpoc.CreateTopic(ctx, projectID, topicID)
