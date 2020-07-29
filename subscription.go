@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateSubscription ...
+// CreateSubscription creates a new subscription and deal if subscription already exists.
 func CreateSubscription(ctx context.Context, projectID, subID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error) {
 	client, err := pubsub.NewClient(context.Background(), projectID)
 	if err != nil {
