@@ -36,6 +36,7 @@ func main() {
 		counter++
 		return nil
 	}
+	maxGoroutines := 1
 
 	// Create topic
 	topic, err := pubsubpoc.CreateTopic(ctx, projectID, topicID)
@@ -74,7 +75,7 @@ func main() {
 	}
 
 	// Open consumer
-	consumer, err := pubsubpoc.OpenConsumer(ctx, projectID, subID, consumerHandler)
+	consumer, err := pubsubpoc.OpenConsumer(ctx, projectID, subID, consumerHandler, maxGoroutines)
 	if err != nil {
 		log.Fatal(err)
 	}

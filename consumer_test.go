@@ -29,6 +29,7 @@ func TestOpenConsumer(t *testing.T) {
 		counter++
 		return nil
 	}
+	maxGoroutines := 1
 
 	// Create topic
 	topic, err := CreateTopic(ctx, projectID, topicID)
@@ -59,7 +60,7 @@ func TestOpenConsumer(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Open consumer
-	consumer, err := OpenConsumer(ctx, projectID, subID, handler)
+	consumer, err := OpenConsumer(ctx, projectID, subID, handler, maxGoroutines)
 	assert.Nil(t, err)
 	// nolint:errcheck
 	defer consumer.Shutdown(ctx)
