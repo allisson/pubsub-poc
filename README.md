@@ -17,6 +17,7 @@ import (
 
 func main() {
 	// Use pubsub emulator
+	// docker run --rm -p "8085:8085" allisson/gcloud-pubsub-emulator
 	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
 
 	// Data
@@ -25,14 +26,14 @@ func main() {
 	topicID := "my-topic"
 
 	// Create topic
-	topic, err := CreateTopic(ctx, projectID, topicID)
+	topic, err := pubsubpoc.CreateTopic(ctx, projectID, topicID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create subscription
 	subConfig := pubsub.SubscriptionConfig{Topic: topic}
-	sub, err := CreateSubscription(ctx, projectID, subID, subConfig)
+	sub, err := pubsubpoc.CreateSubscription(ctx, projectID, subID, subConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
