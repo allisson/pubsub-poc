@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCreateSubscription(t *testing.T) {
+func TestGCPCreateSubscription(t *testing.T) {
 	// Use pubsub emulator
 	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
 
@@ -20,18 +20,18 @@ func TestCreateSubscription(t *testing.T) {
 	ctx := context.Background()
 
 	// Create topic
-	topic, err := CreateTopic(ctx, projectID, topicID)
+	topic, err := GCPCreateTopic(ctx, projectID, topicID)
 	assert.Nil(t, err)
 	assert.Equal(t, topicID, topic.ID())
 
 	// Create subscription
 	subConfig := pubsub.SubscriptionConfig{Topic: topic}
-	sub, err := CreateSubscription(ctx, projectID, subID, subConfig)
+	sub, err := GCPCreateSubscription(ctx, projectID, subID, subConfig)
 	assert.Nil(t, err)
 	assert.Equal(t, subID, sub.ID())
 
 	// Create again to force already exists error
-	sub, err = CreateSubscription(ctx, projectID, subID, subConfig)
+	sub, err = GCPCreateSubscription(ctx, projectID, subID, subConfig)
 	assert.Nil(t, err)
 	assert.Equal(t, subID, sub.ID())
 }

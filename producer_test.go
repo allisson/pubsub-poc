@@ -2,11 +2,12 @@ package pubsubpoc
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	gcloudpubsub "gocloud.dev/pubsub"
+	gocloudpubsub "gocloud.dev/pubsub"
 	_ "gocloud.dev/pubsub/gcppubsub"
 )
 
@@ -20,18 +21,19 @@ func TestOpenProducer(t *testing.T) {
 	ctx := context.Background()
 
 	// Create topic
-	topic, err := CreateTopic(ctx, projectID, topicID)
+	topic, err := GCPCreateTopic(ctx, projectID, topicID)
 	assert.Nil(t, err)
 	assert.Equal(t, topicID, topic.ID())
 
 	// Open producer
-	producer, err := OpenProducer(ctx, projectID, topicID)
+	driverURL := fmt.Sprintf("gcppubsub://projects/%s/topics/%s", projectID, topicID)
+	producer, err := OpenProducer(ctx, driverURL)
 	assert.Nil(t, err)
 	// nolint:errcheck
 	defer producer.Shutdown(ctx)
 
 	// Publish message
-	msg := &gcloudpubsub.Message{
+	msg := &gocloudpubsub.Message{
 		Body: []byte("message-body"),
 		Metadata: map[string]string{
 			"attr1": "attr1",

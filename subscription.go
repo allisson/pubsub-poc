@@ -7,8 +7,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateSubscription creates a new subscription and deal if subscription already exists.
-func CreateSubscription(ctx context.Context, projectID, subID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error) {
+// GCPCreateSubscription creates a new subscription on google cloud pubsub and deal if subscription already exists.
+func GCPCreateSubscription(ctx context.Context, projectID, subID string, subConfig pubsub.SubscriptionConfig) (*pubsub.Subscription, error) {
 	client, err := pubsub.NewClient(context.Background(), projectID)
 	if err != nil {
 		return nil, err

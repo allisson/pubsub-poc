@@ -2,20 +2,18 @@ package pubsubpoc
 
 import (
 	"context"
-	"fmt"
 
 	"go.uber.org/zap"
-	gcloudpubsub "gocloud.dev/pubsub"
+	gocloudpubsub "gocloud.dev/pubsub"
 )
 
 // Handler represents a function to be passed to consumer.
-type Handler func(ctx context.Context, msg *gcloudpubsub.Message) error
+type Handler func(ctx context.Context, msg *gocloudpubsub.Message) error
 
 // Consumer allows you to consume message from a specific subscription.
 type Consumer struct {
-	projectID     string
-	subID         string
-	sub           *gcloudpubsub.Subscription
+	driverURL     string
+	sub           *gocloudpubsub.Subscription
 	fn            Handler
 	maxGoroutines int
 }
@@ -31,8 +29,7 @@ recvLoop:
 			// Errors from Receive indicate that Receive will no longer succeed.
 			logger.Error(
 				"consumer_receiving_error",
-				zap.String("project_id", c.projectID),
-				zap.String("subscription_id", c.subID),
+				zap.String("driver_url", c.driverURL),
 				zap.Error(err),
 			)
 			break
@@ -55,8 +52,7 @@ recvLoop:
 			if err := c.fn(ctx, msg); err != nil {
 				logger.Error(
 					"consumer_message_handle_error",
-					zap.String("project_id", c.projectID),
-					zap.String("subscription_id", c.subID),
+					zap.String("driver_url", c.driverURL),
 					zap.String("msg_body", string(msg.Body)),
 					zap.Reflect("msg_metadata", msg.Metadata),
 					zap.Error(err),
@@ -69,8 +65,7 @@ recvLoop:
 			msg.Ack()
 			logger.Info(
 				"consumer_message_handled",
-				zap.String("project_id", c.projectID),
-				zap.String("subscription_id", c.subID),
+				zap.String("driver_url", c.driverURL),
 				zap.String("msg_body", string(msg.Body)),
 				zap.Reflect("msg_metadata", msg.Metadata),
 			)
@@ -92,11 +87,10 @@ func (c *Consumer) Shutdown(ctx context.Context) error {
 }
 
 // OpenConsumer returns a new consumer.
-func OpenConsumer(ctx context.Context, projectID, subID string, fn Handler, maxGoroutines int) (Consumer, error) {
-	consumer := Consumer{projectID: projectID, subID: subID, fn: fn, maxGoroutines: maxGoroutines}
-	driverURL := fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", projectID, subID)
+func OpenConsumer(ctx context.Context, driverURL string, fn Handler, maxGoroutines int) (Consumer, error) {
+	consumer := Consumer{driverURL: driverURL, fn: fn, maxGoroutines: maxGoroutines}
 
-	sub, err := gcloudpubsub.OpenSubscription(ctx, driverURL)
+	sub, err := gocloudpubsub.OpenSubscription(ctx, driverURL)
 	if err != nil {
 		return consumer, err
 	}

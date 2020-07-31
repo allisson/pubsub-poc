@@ -7,8 +7,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateTopic creates a new topic and deal if topic already exists.
-func CreateTopic(ctx context.Context, projectID, topicID string) (*pubsub.Topic, error) {
+// GCPCreateTopic creates a new topic on google cloud pubsub and deal if topic already exists.
+func GCPCreateTopic(ctx context.Context, projectID, topicID string) (*pubsub.Topic, error) {
 	client, err := pubsub.NewClient(context.Background(), projectID)
 	if err != nil {
 		return nil, err
