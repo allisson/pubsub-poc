@@ -27,19 +27,11 @@ recvLoop:
 		msg, err := c.sub.Receive(ctx)
 		if err != nil {
 			// Errors from Receive indicate that Receive will no longer succeed.
-			shutdownErr := "pubsub: Subscription has been Shutdown (code=FailedPrecondition)"
-			if err.Error() == shutdownErr {
-				logger.Info(
-					"subscription_shutdown_started",
-					zap.String("driver_url", c.driverURL),
-				)
-			} else {
-				logger.Error(
-					"consumer_receiving_error",
-					zap.String("driver_url", c.driverURL),
-					zap.Error(err),
-				)
-			}
+			logger.Error(
+				"consumer_receiving_error",
+				zap.String("driver_url", c.driverURL),
+				zap.Error(err),
+			)
 
 			break
 		}

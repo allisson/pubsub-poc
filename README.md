@@ -10,13 +10,31 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	pubsubpoc "github.com/allisson/pubsub-poc"
 	gocloudpubsub "gocloud.dev/pubsub"
 	_ "gocloud.dev/pubsub/gcppubsub"
 )
+
+func publish(ctx context.Context, projectID, topicID string) {
+	driverURL := fmt.Sprintf("gcppubsub://projects/%s/topics/%s", projectID, topicID)
+	producer, err := pubsubpoc.OpenProducer(ctx, driverURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	counter := 0
+	for {
+		counter++
+		msg := &gocloudpubsub.Message{Body: []byte(fmt.Sprintf(`{"id": %d}`, counter))}
+		producer.Send(ctx, msg)
+		time.Sleep(5 * time.Second)
+	}
+}
 
 func main() {
 	// Use pubsub emulator
@@ -28,15 +46,11 @@ func main() {
 	projectID := "my-project"
 	topicID := "my-topic"
 	subID := "my-subscription"
-	counter := 0
-	wg := sync.WaitGroup{}
-	wg.Add(1)
 	consumerHandler := func(ctx context.Context, msg *gocloudpubsub.Message) error {
-		defer wg.Done()
-		counter++
+		time.Sleep(10 * time.Second)
 		return nil
 	}
-	maxGoroutines := 1
+	maxGoroutines := 10
 
 	// Create topic
 	topic, err := pubsubpoc.GCPCreateTopic(ctx, projectID, topicID)
@@ -45,53 +59,49 @@ func main() {
 	}
 
 	// Create subscription
-	subConfig := pubsub.SubscriptionConfig{Topic: topic}
-	sub, err := pubsubpoc.GCPCreateSubscription(ctx, projectID, subID, subConfig)
+	subConfig := pubsub.SubscriptionConfig{Topic: topic, AckDeadline: 60 * time.Second}
+	_, err = pubsubpoc.GCPCreateSubscription(ctx, projectID, subID, subConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("topic_created=%s, subscription_created=%s\n", topic.ID(), sub.ID())
-
-	// Open producer
-	driverURL := fmt.Sprintf("gcppubsub://projects/%s/topics/%s", projectID, topicID)
-	producer, err := pubsubpoc.OpenProducer(ctx, driverURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// nolint:errcheck
-	defer producer.Shutdown(ctx)
-
-	// Publish message
-	msg := &gocloudpubsub.Message{
-		Body: []byte("message-body"),
-		Metadata: map[string]string{
-			"attr1": "attr1",
-			"attr2": "attr2",
-		},
-	}
-	err = producer.Send(ctx, msg)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Publish messages every 5 seconds
+	go publish(ctx, projectID, topicID)
 
 	// Open consumer
-	driverURL = fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", projectID, subID)
+	driverURL := fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", projectID, subID)
 	consumer, err := pubsubpoc.OpenConsumer(ctx, driverURL, consumerHandler, maxGoroutines)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// nolint:errcheck
-	defer consumer.Shutdown(ctx)
+
+	// Graceful shutdown
+	idleChan := make(chan struct{})
+	go func() {
+		sigint := make(chan os.Signal, 1)
+
+		// interrupt signal sent from terminal
+		signal.Notify(sigint, os.Interrupt)
+		// sigterm signal sent from kubernetes
+		signal.Notify(sigint, syscall.SIGTERM)
+
+		<-sigint
+
+		// We received an interrupt signal, shut down.
+		if err := consumer.Shutdown(ctx); err != nil {
+			log.Printf("consumer_shutdown_error, err=%s\n", err.Error())
+		}
+
+		close(idleChan)
+	}()
 
 	// Start consumer
-	// nolint:errcheck
-	go consumer.Start(ctx)
+	if err := consumer.Start(ctx); err != nil {
+		log.Printf("consumer_error, err=%s\n", err.Error())
+	}
 
-	// Wait for handle message
-	wg.Wait()
+	<-idleChan
 
-	// Counter must be incremented once
-	fmt.Printf("counter=%d\n", counter)
+	log.Println("consumer_shutdown_completed")
 }
 ```
