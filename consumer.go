@@ -48,10 +48,18 @@ recvLoop:
 			// Release the semaphore.
 			defer func() { <-sem }()
 
+			// Log message received
+			logger.Info(
+				"consumer_message_received",
+				zap.String("driver_url", c.driverURL),
+				zap.String("msg_body", string(msg.Body)),
+				zap.Reflect("msg_metadata", msg.Metadata),
+			)
+
 			// Execute handler
 			if err := c.fn(ctx, msg); err != nil {
 				logger.Error(
-					"consumer_message_handle_error",
+					"consumer_message_handler_error",
 					zap.String("driver_url", c.driverURL),
 					zap.String("msg_body", string(msg.Body)),
 					zap.Reflect("msg_metadata", msg.Metadata),
@@ -63,8 +71,10 @@ recvLoop:
 
 			// Ack message
 			msg.Ack()
+
+			// Log message processed
 			logger.Info(
-				"consumer_message_handled",
+				"consumer_message_processed",
 				zap.String("driver_url", c.driverURL),
 				zap.String("msg_body", string(msg.Body)),
 				zap.Reflect("msg_metadata", msg.Metadata),
