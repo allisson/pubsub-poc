@@ -2,13 +2,14 @@ package pubsubpoc
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/stretchr/testify/assert"
-	gcloudpubsub "gocloud.dev/pubsub"
+	gocloudpubsub "gocloud.dev/pubsub"
 	_ "gocloud.dev/pubsub/gcppubsub"
 )
 
@@ -24,7 +25,7 @@ func TestOpenConsumer(t *testing.T) {
 	counter := 0
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	handler := func(ctx context.Context, msg *gcloudpubsub.Message) error {
+	handler := func(ctx context.Context, msg *gocloudpubsub.Message) error {
 		defer wg.Done()
 		counter++
 		return nil
@@ -32,24 +33,25 @@ func TestOpenConsumer(t *testing.T) {
 	maxGoroutines := 1
 
 	// Create topic
-	topic, err := CreateTopic(ctx, projectID, topicID)
+	topic, err := GCPCreateTopic(ctx, projectID, topicID)
 	assert.Nil(t, err)
 	assert.Equal(t, topicID, topic.ID())
 
 	// Create subscription
 	subConfig := pubsub.SubscriptionConfig{Topic: topic}
-	sub, err := CreateSubscription(ctx, projectID, subID, subConfig)
+	sub, err := GCPCreateSubscription(ctx, projectID, subID, subConfig)
 	assert.Nil(t, err)
 	assert.Equal(t, subID, sub.ID())
 
 	// Open producer
-	producer, err := OpenProducer(ctx, projectID, topicID)
+	driverURL := fmt.Sprintf("gcppubsub://projects/%s/topics/%s", projectID, topicID)
+	producer, err := OpenProducer(ctx, driverURL)
 	assert.Nil(t, err)
 	// nolint:errcheck
 	defer producer.Shutdown(ctx)
 
 	// Publish message
-	msg := &gcloudpubsub.Message{
+	msg := &gocloudpubsub.Message{
 		Body: []byte("message-body"),
 		Metadata: map[string]string{
 			"attr1": "attr1",
@@ -60,7 +62,8 @@ func TestOpenConsumer(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Open consumer
-	consumer, err := OpenConsumer(ctx, projectID, subID, handler, maxGoroutines)
+	driverURL = fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", projectID, subID)
+	consumer, err := OpenConsumer(ctx, driverURL, handler, maxGoroutines)
 	assert.Nil(t, err)
 	// nolint:errcheck
 	defer consumer.Shutdown(ctx)

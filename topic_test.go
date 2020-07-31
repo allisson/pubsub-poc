@@ -18,12 +18,12 @@ func TestCreateTopic(t *testing.T) {
 	ctx := context.Background()
 
 	// Create topic
-	topic, err := CreateTopic(ctx, projectID, topicID)
+	topic, err := GCPCreateTopic(ctx, projectID, topicID)
 	assert.Nil(t, err)
 	assert.Equal(t, topicID, topic.ID())
 
 	// Create again to force already exists error
-	topic, err = CreateTopic(ctx, projectID, topicID)
+	topic, err = GCPCreateTopic(ctx, projectID, topicID)
 	assert.Nil(t, err)
 	assert.Equal(t, topicID, topic.ID())
 }

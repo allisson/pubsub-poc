@@ -14,7 +14,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	pubsubpoc "github.com/allisson/pubsub-poc"
-	gcloudpubsub "gocloud.dev/pubsub"
+	gocloudpubsub "gocloud.dev/pubsub"
 	_ "gocloud.dev/pubsub/gcppubsub"
 )
 
@@ -31,7 +31,7 @@ func main() {
 	counter := 0
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	consumerHandler := func(ctx context.Context, msg *gcloudpubsub.Message) error {
+	consumerHandler := func(ctx context.Context, msg *gocloudpubsub.Message) error {
 		defer wg.Done()
 		counter++
 		return nil
@@ -39,14 +39,14 @@ func main() {
 	maxGoroutines := 1
 
 	// Create topic
-	topic, err := pubsubpoc.CreateTopic(ctx, projectID, topicID)
+	topic, err := pubsubpoc.GCPCreateTopic(ctx, projectID, topicID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create subscription
 	subConfig := pubsub.SubscriptionConfig{Topic: topic}
-	sub, err := pubsubpoc.CreateSubscription(ctx, projectID, subID, subConfig)
+	sub, err := pubsubpoc.GCPCreateSubscription(ctx, projectID, subID, subConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -54,7 +54,8 @@ func main() {
 	fmt.Printf("topic_created=%s, subscription_created=%s\n", topic.ID(), sub.ID())
 
 	// Open producer
-	producer, err := pubsubpoc.OpenProducer(ctx, projectID, topicID)
+	driverURL := fmt.Sprintf("gcppubsub://projects/%s/topics/%s", projectID, topicID)
+	producer, err := pubsubpoc.OpenProducer(ctx, driverURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func main() {
 	defer producer.Shutdown(ctx)
 
 	// Publish message
-	msg := &gcloudpubsub.Message{
+	msg := &gocloudpubsub.Message{
 		Body: []byte("message-body"),
 		Metadata: map[string]string{
 			"attr1": "attr1",
@@ -75,7 +76,8 @@ func main() {
 	}
 
 	// Open consumer
-	consumer, err := pubsubpoc.OpenConsumer(ctx, projectID, subID, consumerHandler, maxGoroutines)
+	driverURL = fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", projectID, subID)
+	consumer, err := pubsubpoc.OpenConsumer(ctx, driverURL, consumerHandler, maxGoroutines)
 	if err != nil {
 		log.Fatal(err)
 	}
